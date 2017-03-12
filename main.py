@@ -6,7 +6,7 @@ from urllib.parse import unquote
 
 
 
-pool = concurrent.futures.ThreadPoolExecutor(max_workers=70)
+pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
 
 def parse_args():
