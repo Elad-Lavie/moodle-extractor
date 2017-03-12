@@ -1,29 +1,36 @@
 # -*- coding: utf-8 -*-
-import requests , os, collections, sys
+import requests , os, collections, sys, argparse
 from bs4 import BeautifulSoup
 from urllib.parse import unquote
 
-username = sys.argv[0]
-password = sys.argv[1]
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="downloading moodle files")
+    parser.add_argument("username",help= 'your id', type=int)
+    parser.add_argument("password",help= 'you digit password', type=int)
+    return parser.parse_args()
 
 
 def main():
     path_root = 'output'
     session = requests.session()
-    login(session,username,password)
+    args = parse_args()
+    login(session,args.username,args.password)
     courses = find_all_courses(session)
     for course in courses.keys():
         print(course)
         path = os.path.join(path_root,course)
         course_url = courses[course]
         make_one_course(session,path,course_url)
+
+
         
     
 
 def make_one_course(session,path,course_url):
     parsed_files = parse_one_course(session,path, course_url)
     download_from_site(session, parsed_files)
-    add_course_data(session, path, parsed_files, course_url)
+    add_course_html(session, path, parsed_files, course_url)
     
 
 
@@ -86,22 +93,8 @@ def find_file_url_from_link(session,url_link):
 
 
 
-def add_course_data(session,path,files,course_url):
+def add_course_html(session,path,files,course_url):
     os.makedirs(path, exist_ok=True)
-    with open(os.path.join(path,"mapping.txt"),"w") as fd:
-        fd.write(make_mapping_file(files))
-    with open(os.path.join(path,"moodle.html"),"wb") as fd:
-        fd.write(make_html_snapshot(path,session, course_url,files))
-
-
-
-def make_mapping_file(files):
-    webName2urlName = {file.file_name : os.path.basename(file.url) for file in files}
-    mapping_str = "\n".join(["{:<80} {} ".format(x.strip(),y.strip()) for (x,y) in webName2urlName.items()])
-    return mapping_str
-
-
-def make_html_snapshot(path,session,course_url,files):
     request_output = session.get(course_url)
     bs = BeautifulSoup(request_output.content,'lxml')
     for file in files:
@@ -113,7 +106,8 @@ def make_html_snapshot(path,session,course_url,files):
         link['onclick'] = relpath
         link['href'] = relpath
         link['style'] = "color:brown"
-    return bs.prettify('utf-8')
+    with open(os.path.join(path,"moodle.html"),"wb") as fd:
+        fd.write(bs.prettify('utf-8'))
     
         
 def download_from_site(session,files):
