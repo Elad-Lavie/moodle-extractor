@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
-import requests , os, collections, sys, argparse
+import concurrent.futures
+import requests , os, collections, argparse
 from bs4 import BeautifulSoup
 from urllib.parse import unquote
+
+
+
+pool = concurrent.futures.ThreadPoolExecutor(max_workers=70)
 
 
 def parse_args():
@@ -55,7 +60,7 @@ def parse_one_course(session, origin_path,course_url):
     bs = BeautifulSoup(request_res.text,'lxml')
     sections = filter(lambda x: x.h3, bs.find_all('div',{'class' : 'content'}))
     File_obj = collections.namedtuple('File_obj',['url','path','file_name','li_id'])
-    files = list()
+    files = dict()
     for section in sections:
         section_name = section.find(True,{'class': 'sectionname'})
         if not section_name: continue
@@ -71,10 +76,11 @@ def parse_one_course(session, origin_path,course_url):
                 file_name = link_tag.find(True,{'class': 'instancename'}).contents[0]
                 new_path = os.path.join(origin_path,path['section'],path['subsection'])
                 initial_file_url = activity.find('a')['href']
-                file_url = find_file_url_from_link(session,initial_file_url)
+                file_url = pool.submit(find_file_url_from_link,session,initial_file_url)
                 file_obj = File_obj(file_url,new_path,file_name,activity['id'])
-                files.append(file_obj)
+                files[file_url] = file_obj
     return files
+
 
 
 
@@ -97,11 +103,11 @@ def add_course_html(session,path,files,course_url):
     os.makedirs(path, exist_ok=True)
     request_output = session.get(course_url)
     bs = BeautifulSoup(request_output.content,'lxml')
-    for file in files:
+    for file in files.values():
         li = bs.find("li",{"id":file.li_id})
         link = li.find("a")
         relpath_dirname = os.path.relpath(file.path,path)
-        file_name = os.path.basename(unquote(file.url))
+        file_name = os.path.basename(unquote(file.url.result()))
         relpath = os.path.join(relpath_dirname,file_name)
         link['onclick'] = relpath
         link['href'] = relpath
@@ -111,14 +117,15 @@ def add_course_html(session,path,files,course_url):
     
         
 def download_from_site(session,files):
-    for file in files:
-        print(file.file_name)
-        dirname = os.path.realpath(file.path)
+    for file in concurrent.futures.as_completed(files):
+        file_obj = files[file]
+        print(file_obj.file_name)
+        dirname = os.path.realpath(file_obj.path)
         os.makedirs(dirname, exist_ok=True)
-        filename= os.path.basename(file.url)
+        filename= os.path.basename(file_obj.url.result())
         new_path = unquote(os.path.join(dirname,filename))
         with open(new_path.replace("?",""), "wb") as f:
-            content = session.get(file.url,stream=True).raw.data
+            content = session.get(file_obj.url.result(),stream=True).raw.data
             f.write(content)
 
 
